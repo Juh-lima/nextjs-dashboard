@@ -4,8 +4,13 @@ import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
 
-async function seedUsers() {
+async function setupExtensions() {
+  // Criar extensão UUId apenas UMA vez
   await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+  console.log('Extensão uuid-ossp verificada');
+}
+
+async function seedUsers() {
   await sql`
     CREATE TABLE IF NOT EXISTS users (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -26,12 +31,35 @@ async function seedUsers() {
     }),
   );
 
+  console.log(`Inseridos ${insertedUsers.length} usuários`);
   return insertedUsers;
 }
 
-async function seedInvoices() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+async function seedCustomers() {
+  await sql`
+    CREATE TABLE IF NOT EXISTS customers (
+      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      email VARCHAR(255) NOT NULL,
+      image_url VARCHAR(255) NOT NULL
+    );
+  `;
 
+  const insertedCustomers = await Promise.all(
+    customers.map(
+      (customer) => sql`
+        INSERT INTO customers (id, name, email, image_url)
+        VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
+        ON CONFLICT (id) DO NOTHING;
+      `,
+    ),
+  );
+
+  console.log(`Inseridos ${insertedCustomers.length} clientes`);
+  return insertedCustomers;
+}
+
+async function seedInvoices() {
   await sql`
     CREATE TABLE IF NOT EXISTS invoices (
       id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -52,32 +80,8 @@ async function seedInvoices() {
     ),
   );
 
+  console.log(`Inseridas ${insertedInvoices.length} faturas`);
   return insertedInvoices;
-}
-
-async function seedCustomers() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS customers (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      image_url VARCHAR(255) NOT NULL
-    );
-  `;
-
-  const insertedCustomers = await Promise.all(
-    customers.map(
-      (customer) => sql`
-        INSERT INTO customers (id, name, email, image_url)
-        VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
-        ON CONFLICT (id) DO NOTHING;
-      `,
-    ),
-  );
-
-  return insertedCustomers;
 }
 
 async function seedRevenue() {
@@ -98,20 +102,35 @@ async function seedRevenue() {
     ),
   );
 
+  console.log(`Inseridos ${insertedRevenue.length} registros de receita`);
   return insertedRevenue;
 }
 
 export async function GET() {
   try {
-    const result = await sql.begin((sql) => [
-      seedUsers(),
-      seedCustomers(),
-      seedInvoices(),
-      seedRevenue(),
-    ]);
-
-    return Response.json({ message: 'Database seeded successfully' });
+    console.log('Iniciando seed do banco de dados...');
+    
+    // Setup inicial
+    await setupExtensions();
+    
+    // Seed em ordem correta (considerando dependências)
+    await seedUsers();
+    await seedCustomers();
+    await seedInvoices();
+    await seedRevenue();
+    
+    console.log('Seed concluído com sucesso!');
+    
+    return Response.json({ 
+      message: 'Database seeded successfully',
+      timestamp: new Date().toISOString()
+    });
+    
   } catch (error) {
-    return Response.json({ error }, { status: 500 });
+    console.error('Erro durante o seed:', error);
+    return Response.json({ 
+      error: error.message,
+      details: 'Verifique se a extensão uuid-ossp está disponível no Neon'
+    }, { status: 500 });
   }
 }
