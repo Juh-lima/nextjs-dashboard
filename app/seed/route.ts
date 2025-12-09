@@ -125,12 +125,19 @@ export async function GET() {
       message: 'Database seeded successfully',
       timestamp: new Date().toISOString()
     });
-    
-  } catch (error) {
+
+  } catch (error: unknown) {
     console.error('Erro durante o seed:', error);
-    return Response.json({ 
-      error: error.message,
-      details: 'Verifique se a extensão uuid-ossp está disponível no Neon'
-    }, { status: 500 });
+
+    const message =
+      error instanceof Error ? error.message : String(error);
+
+    return Response.json(
+      {
+        error: message,
+        details: 'Verifique se a extensão uuid-ossp está disponível no Neon',
+      },
+      { status: 500 }
+    );
   }
 }
